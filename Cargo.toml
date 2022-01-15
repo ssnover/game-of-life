@@ -1,0 +1,20 @@
+[package]
+name = "game-of-life"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gba = { git = "https://github.com/rust-console/gba" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[package.metadata.docs.rs]
+default-target = "thumbv4t-none-eabi"
+cargoflags = ["-Zbuild-std=core"]
+rustdoc-args = ["--cfg","docs_rs"]
