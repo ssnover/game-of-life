@@ -13,3 +13,7 @@ Then run `./build-gba.sh` which will produce a file runnable by an emulator at `
 The game boots in Edit mode and will show a cursor. Press directional keys to move the cursor or A to toggle the current cell state under the cursor.
 
 To Run Conway's Game of Life, simply press Start and watch it run! If you want to edit an intermediate state, simply press Start again to go back to Edit mode.
+
+Some interesting patterns are available here: https://pi.math.cornell.edu/~lipa/mec/lesson6.html
+
+You can read about the very simple rules that give life to the cellular automata here: https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life#Rules 
