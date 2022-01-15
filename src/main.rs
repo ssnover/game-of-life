@@ -27,37 +27,48 @@ pub fn main() -> ! {
     DISPCNT.write(SETTING);
     let mut keys = RisingEdgeKeyDetection::new();
 
-    let mut game_state_a = GameState::new();
-    let mut game_state_b = GameState::new();
-
-    // Initialize A with some state
-    game_state_a.0[50][50] = true;
-    game_state_a.0[51][50] = true;
-    game_state_a.0[52][50] = true;
-    //game_state_a.0[CELLS_X - 5][CELLS_Y - 4] = true;
-    //game_state_a.0[CELLS_X - 4][CELLS_Y - 3] = true;
-    game_state_a.0[51][49] = true;
-
-    let mut display_a = true;
+    let mut screen_buf = Screen::new();
+    let mut current_game_state = GameState::Edit;
+    let mut cursor = Cursor::new();
+    let mut map_context = RunStateContext::new();
+    let mut loop_counter = 0;
 
     loop {
         keys.read();
-        if keys.inner().a() {
-            write_cell(40, 20, Color::from_rgb(255, 0, 0));
-        }
 
-        if display_a {
-            render(&game_state_a);
-            game_state_a.step(&mut game_state_b);
-            //write_cell(0, 0, RED);
-        } else {
-            render(&game_state_b);
-            game_state_b.step(&mut game_state_a);
-            //write_cell(0, 0, BLUE);
-        }
-        display_a = !display_a;
+            match current_game_state {
+                GameState::Edit => {
+                    // process cursor movement
+                    cursor.process_keys(keys.inner());
+                    // render map
+                    map_context.render_map(&mut screen_buf);
+                    // render cursor
+                    render_cursor(&cursor, &mut screen_buf);
+                    if keys.start_rising() {
+                        current_game_state = GameState::Run;
+                    }
+                    if keys.a_rising() {
+                        map_context.toggle_cell(cursor.x(), cursor.y());
+                    }
+                },
+                GameState::Run => {
+                    // render map
+                    map_context.render_map(&mut screen_buf);
+                    // step forward automata
+                    map_context.step();
+                    if keys.start_rising() {
+                        current_game_state = GameState::Edit;
+                    }
+                }
+            }
 
-        spin_cycle();
+        screen_buf.render();
+
+        spin_cycle(1);
+        loop_counter += 1;
+        if loop_counter >= 8 {
+            loop_counter = 0;
+        }
     }
 }
 
@@ -65,16 +76,35 @@ fn write_pixel(x: usize, y: usize, color: Color) {
     mode3::bitmap_xy(x, y).write(color);
 }
 
-fn write_cell(x: usize, y: usize, color: Color) {
-    for row in 0..PIXELS_PER_CELL {
-        for col in 0..PIXELS_PER_CELL {
-            write_pixel((PIXELS_PER_CELL * x) + col, (PIXELS_PER_CELL * y) + row, color);
+pub struct Screen([[Color; CELLS_Y]; CELLS_X]);
+
+impl Screen {
+    pub fn new() -> Self {
+        Screen([[Color::from_rgb(0, 0, 0); CELLS_Y]; CELLS_X])
+    }
+    pub fn write_cell(&mut self, x: usize, y: usize, color: Color) {
+        self.0[x][y] = color;
+    }
+
+    pub fn render(&self) {
+        for col in 0..CELLS_X {
+            for row in 0..CELLS_Y {
+                Screen::render_cell(col, row, self.0[col][row]);
+            }
+        }
+    }
+
+    fn render_cell(x: usize, y: usize, color: Color) {
+        for row in 0..PIXELS_PER_CELL {
+            for col in 0..PIXELS_PER_CELL {
+                write_pixel((PIXELS_PER_CELL * x) + col, (PIXELS_PER_CELL * y) + row, color);
+            }
         }
     }
 }
 
-fn spin_cycle() {
-    for _ in 0..8 {
+fn spin_cycle(cycles: usize) {
+    for _ in 0..cycles {
         while VCOUNT.read() < 160 {}
         while VCOUNT.read() >= 160 {}
     }
@@ -111,11 +141,125 @@ impl RisingEdgeKeyDetection {
     }
 }
 
-struct GameState([[bool; CELLS_Y]; CELLS_X]);
+enum GameState {
+    Edit,
+    Run,
+}
 
-impl GameState {
-    pub fn new() -> GameState {
-        GameState([[false; CELLS_Y]; CELLS_X])
+struct Cursor((usize, usize));
+
+impl Cursor {
+    pub fn new() -> Self {
+        Cursor((CELLS_X / 2, CELLS_Y / 2))
+    }
+
+    pub fn x(&self) -> usize {
+        self.0.0
+    }
+
+    pub fn y(&self) -> usize {
+        self.0.1
+    }
+
+    pub fn process_keys(&mut self, input: &Keys) {
+        if input.up() {
+            self.move_up();
+        } else if input.down() {
+            self.move_down();
+        }
+
+        if input.left() {
+            self.move_left();
+        } else if input.right() {
+            self.move_right();
+        }
+    }
+
+    fn move_right(&mut self) {
+        self.0.0 = min(self.0.0 + 1, CELLS_X - 1);
+    }
+
+    fn move_up(&mut self) {
+        self.0.1 = self.0.1.saturating_sub(1);
+    }
+
+    fn move_left(&mut self) {
+        self.0.0 = self.0.0.saturating_sub(1);
+    }
+
+    fn move_down(&mut self) {
+        self.0.1 = min(self.0.1 + 1, CELLS_Y - 1)
+    }
+}
+
+fn render_cursor(cursor: &Cursor, screen_buf: &mut Screen) {
+    const WHITE: Color = Color::from_rgb(255, 255, 255);
+    if cursor.0.0 != 0 {
+        screen_buf.write_cell(cursor.0.0 - 1, cursor.0.1, WHITE);
+    }
+    if cursor.0.1 != 0 {
+        screen_buf.write_cell(cursor.0.0, cursor.0.1 - 1, WHITE);
+    }
+    if cursor.0.0 != CELLS_X - 1 {
+        screen_buf.write_cell(cursor.0.0 + 1, cursor.0.1, WHITE);
+    }
+    if cursor.0.1 != CELLS_Y - 1 {
+        screen_buf.write_cell(cursor.0.0, cursor.0.1 + 1, WHITE);
+    }
+}
+
+pub struct RunStateContext {
+    map_state_a: MapState,
+    map_state_b: MapState,
+    primary_map_is_a: bool,
+}
+
+impl RunStateContext {
+    pub fn new() -> Self {
+        Self {
+            map_state_a: MapState::new(),
+            map_state_b: MapState::new(),
+            primary_map_is_a: true,
+        }
+    }
+
+    pub fn step(&mut self) {
+        if self.primary_map_is_a {
+            self.map_state_a.step(&mut self.map_state_b);
+        } else {
+            self.map_state_b.step(&mut self.map_state_a);
+        }
+        self.primary_map_is_a = !self.primary_map_is_a;
+    }
+
+    pub fn render_map(&self, screen_buf: &mut Screen) {
+        if self.primary_map_is_a {
+            render(&self.map_state_a, screen_buf);
+        } else {
+            render(&self.map_state_b, screen_buf);
+        }
+    }
+
+    pub fn set_cell(&mut self, x: usize, y: usize, state: bool) {
+        self.map_state_a.0[x][y] = state;
+        self.map_state_b.0[x][y] = state;
+    }
+
+    pub fn toggle_cell(&mut self, x: usize, y: usize) {
+        let new_state = !if self.primary_map_is_a {
+            self.map_state_a.0[x][y]
+        } else {
+            self.map_state_b.0[x][y]
+        };
+        self.set_cell(x, y, new_state);
+    }
+}
+
+struct MapState([[bool; CELLS_Y]; CELLS_X]);
+
+impl MapState {
+    pub fn new() -> MapState {
+        MapState([[false; CELLS_Y]; CELLS_X])
     }
 
     fn neighbors_alive(&self, x: usize, y: usize) -> u8 {
@@ -133,7 +277,7 @@ impl GameState {
         count
     }
 
-    pub fn step(&self, next: &mut GameState) {
+    pub fn step(&self, next: &mut MapState) {
         for col in 0..CELLS_X {
             for row in 0..CELLS_Y {
                 match (self.0[col][row], self.neighbors_alive(col, row)) {
@@ -150,13 +294,13 @@ impl GameState {
     }
 }
 
-fn render(game_state: &GameState) {
+fn render(game_state: &MapState, screen_buf: &mut Screen) {
     for col in 0..CELLS_X {
         for row in 0..CELLS_Y {
             if game_state.0[col][row] {
-                write_cell(col, row, Color::from_rgb(0, 31, 0));
+                screen_buf.write_cell(col, row, Color::from_rgb(0, 31, 0));
             } else {
-                write_cell(col, row, Color::from_rgb(0, 0, 0));
+                screen_buf.write_cell(col, row, Color::from_rgb(0, 0, 0));
             }
         }
     }
