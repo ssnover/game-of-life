@@ -14,10 +14,6 @@ const PIXELS_PER_CELL: usize = 2;
 const CELLS_Y: usize = mode3::HEIGHT / PIXELS_PER_CELL;
 const CELLS_X: usize = mode3::WIDTH / PIXELS_PER_CELL;
 
-const RED: Color = Color::from_rgb(255, 0, 0);
-const GREEN: Color = Color::from_rgb(0, 255, 0);
-const BLUE: Color = Color::from_rgb(0, 0, 255);
-
 #[no_mangle]
 pub fn main() -> ! {
     DISPCNT.write(
@@ -33,28 +29,26 @@ pub fn main() -> ! {
     };
     DISPSTAT.write(DisplayStatus::new().with_vblank_irq_enabled(true));
 
-    let mut keys = RisingEdgeKeyDetection::new();
     let mut screen_buf = Screen::new();
     let mut current_game_state = GameState::Edit;
     let mut cursor = Cursor::new();
     let mut map_context = RunStateContext::new();
-    let mut loop_counter = 0;
 
     loop {
-        keys.read();
+        let keys = KEYINPUT.read().into();
 
         match current_game_state {
             GameState::Edit => {
                 // process cursor movement
-                cursor.process_keys(keys.inner());
+                cursor.process_keys(&keys);
                 // render map
                 map_context.render_map(&mut screen_buf);
                 // render cursor
                 render_cursor(&cursor, &mut screen_buf);
-                if keys.start_rising() {
+                if keys.start() {
                     current_game_state = GameState::Run;
                 }
-                if keys.a_rising() {
+                if keys.a() {
                     map_context.toggle_cell(cursor.x(), cursor.y());
                 }
             }
@@ -63,7 +57,7 @@ pub fn main() -> ! {
                 map_context.render_map(&mut screen_buf);
                 // step forward automata
                 map_context.step();
-                if keys.start_rising() {
+                if keys.start() {
                     current_game_state = GameState::Edit;
                 }
             }
@@ -72,10 +66,6 @@ pub fn main() -> ! {
         screen_buf.render();
 
         unsafe { VBlankIntrWait() };
-        loop_counter += 1;
-        if loop_counter >= 8 {
-            loop_counter = 0;
-        }
     }
 }
 
@@ -111,44 +101,6 @@ impl Screen {
                 );
             }
         }
-    }
-}
-
-fn spin_cycle(cycles: usize) {
-    for _ in 0..cycles {
-        while VCOUNT.read() < 160 {}
-        while VCOUNT.read() >= 160 {}
-    }
-}
-
-struct RisingEdgeKeyDetection {
-    prev_key_state: Keys,
-    current_key_state: Keys,
-}
-
-impl RisingEdgeKeyDetection {
-    pub fn new() -> Self {
-        Self {
-            prev_key_state: KEYINPUT.read().into(),
-            current_key_state: KEYINPUT.read().into(),
-        }
-    }
-
-    pub fn read(&mut self) {
-        self.prev_key_state = self.current_key_state;
-        self.current_key_state = KEYINPUT.read().into();
-    }
-
-    pub fn inner(&self) -> &Keys {
-        &self.current_key_state
-    }
-
-    pub fn a_rising(&self) -> bool {
-        !self.prev_key_state.a() && self.current_key_state.a()
-    }
-
-    pub fn start_rising(&self) -> bool {
-        !self.prev_key_state.start() && self.current_key_state.start()
     }
 }
 
@@ -331,6 +283,6 @@ fn irq_handler_t32() {
     intr_wait_flags.set_vblank(true);
     IRQ_ACKNOWLEDGE.write(intr_wait_flags);
     unsafe { INTR_WAIT_ACKNOWLEDGE.write(intr_wait_flags) };
-    
+
     unsafe { IME.write(true) };
 }
