@@ -7,8 +7,15 @@ use gba::prelude::*;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
+    for col in 0..mode3::WIDTH {
+        for row in 0..mode3::HEIGHT {
+            write_pixel(col, row, Color::from_rgb(31, 0, 0));
+        }
+    }
     loop {}
 }
+
+const MAGIC_SEQUENCE: [u8; 6] = [0x43, 0x4F, 0x4E, 0x57, 0x41, 0x59];
 
 const PIXELS_PER_CELL: usize = 2;
 const CELLS_Y: usize = mode3::HEIGHT / PIXELS_PER_CELL;
@@ -29,10 +36,22 @@ pub fn main() -> ! {
     };
     DISPSTAT.write(DisplayStatus::new().with_vblank_irq_enabled(true));
 
+    gba::save::use_flash_128k();
+    gba::save::set_timer_for_timeout(3);
+
+
     let mut screen_buf = Screen::new();
     let mut current_game_state = GameState::Edit;
     let mut cursor = Cursor::new();
     let mut map_context = RunStateContext::new();
+
+    let sav = SaveAccess::new().unwrap();
+    write_pixel(0, 0, Color::from_rgb(255, 0, 0));
+    if check_for_previous_save(&sav) {
+        write_pixel(0, 0, Color::from_rgb(255, 0, 0));
+    } else {
+        write_pixel(0, 0, Color::from_rgb(0, 0, 255));
+    }
 
     loop {
         let keys = KEYINPUT.read().into();
@@ -51,6 +70,9 @@ pub fn main() -> ! {
                 if keys.a() {
                     map_context.toggle_cell(cursor.x(), cursor.y());
                 }
+                if keys.l() && keys.r() {
+                    current_game_state = GameState::Save;
+                }
             }
             GameState::Run => {
                 // render map
@@ -60,6 +82,10 @@ pub fn main() -> ! {
                 if keys.start() {
                     current_game_state = GameState::Edit;
                 }
+            },
+            GameState::Save => {
+                save_map_state(&map_context, &sav);
+                current_game_state = GameState::Edit;
             }
         }
 
@@ -71,6 +97,38 @@ pub fn main() -> ! {
 
 fn write_pixel(x: usize, y: usize, color: Color) {
     mode3::bitmap_xy(x, y).write(color);
+}
+
+fn check_for_previous_save(sav: &SaveAccess) -> bool {
+    let mut sequence: [u8; 6] = [0u8; 6];
+    match sav.read(0, &mut sequence) {
+        Ok(()) => {
+            sequence == MAGIC_SEQUENCE
+        },
+        Err(_err) => {
+            false
+        }
+    }
+}
+
+fn save_map_state(ctx: &RunStateContext, sav: &SaveAccess) {
+    sav.prepare_write(0..(MAGIC_SEQUENCE.len() + (CELLS_X * CELLS_Y / 8))).unwrap();
+    sav.write(0, &MAGIC_SEQUENCE).unwrap();
+    const BLOCK_SIZE: usize = CELLS_X / 8;
+    let mut block = [0u8; BLOCK_SIZE];
+    let map_state = ctx.get_current_state();
+    for row in 0..CELLS_Y {
+        for col in 0..CELLS_X {
+           let byte_idx = (col as u8) >> 3;
+           let bit_idx = (col as u8) & 0b111;
+           if map_state.0[col][row] {
+               block[byte_idx as usize] |= 1u8 << bit_idx;
+           } else {
+               block[byte_idx as usize] &= !(1u8 << bit_idx);
+           }
+        }
+        sav.write(MAGIC_SEQUENCE.len() + (row * BLOCK_SIZE), &block).unwrap();
+    }
 }
 
 pub struct Screen([[Color; CELLS_Y]; CELLS_X]);
@@ -107,6 +165,7 @@ impl Screen {
 enum GameState {
     Edit,
     Run,
+    Save,
 }
 
 struct Cursor((usize, usize));
@@ -216,9 +275,17 @@ impl RunStateContext {
         };
         self.set_cell(x, y, new_state);
     }
+
+    pub fn get_current_state(&self) -> &MapState {
+        if self.primary_map_is_a {
+            &self.map_state_a
+        } else {
+            &self.map_state_b
+        }
+    }
 }
 
-struct MapState([[bool; CELLS_Y]; CELLS_X]);
+pub struct MapState([[bool; CELLS_Y]; CELLS_X]);
 
 impl MapState {
     pub fn new() -> MapState {
