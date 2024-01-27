@@ -4,13 +4,13 @@
 use gba::{mem_fns::__aeabi_memset, prelude::*};
 
 mod keys;
-use keys::{Edge, StatefulKeys};
+use keys::StatefulKeys;
+mod game_state;
+use game_state::GameState;
 
 const SCREEN_WIDTH: u16 = 240;
 const SCREEN_HEIGHT: u16 = 160;
 
-const PADDLE_WIDTH: u16 = 4;
-const PADDLE_HEIGHT: u16 = 20;
 const BALL_SIZE: u16 = 2;
 
 struct Ball {
@@ -30,42 +30,20 @@ impl Ball {
             self.dy = -self.dy;
         }
 
-        if self.x + BALL_SIZE >= 1 && self.x <= 1 + PADDLE_WIDTH {
+        if self.x + BALL_SIZE >= 1 && self.x <= 1 {
             self.dx = -self.dx;
             self.dy = -self.dy;
         }
 
-        if self.x + BALL_SIZE >= SCREEN_WIDTH && self.x <= SCREEN_WIDTH + PADDLE_WIDTH {
+        if self.x + BALL_SIZE >= SCREEN_WIDTH && self.x <= SCREEN_WIDTH {
             self.dx = -self.dx;
             self.dy = -self.dy;
         }
 
-        if self.x + BALL_SIZE <= 1 + BALL_SIZE {
-            self.x = SCREEN_WIDTH / 2 - BALL_SIZE / 2;
-            self.y = SCREEN_HEIGHT / 2 - BALL_SIZE / 2;
-            self.dx = 1;
-            self.dy = 1;
-        }
-
-        if self.x >= SCREEN_WIDTH - BALL_SIZE - 1 {
-            self.x = SCREEN_WIDTH / 2 - BALL_SIZE / 2;
-            self.y = SCREEN_HEIGHT / 2 - BALL_SIZE / 2;
-            self.dx = -1;
-            self.dy = 1;
-        }
         self.x = (self.x as i16 + self.dx) as u16;
         self.y = (self.y as i16 + self.dy) as u16;
     }
 }
-
-static SPRITE_POSITIONS: [GbaCell<u16>; 6] = [
-    GbaCell::new(0),
-    GbaCell::new(0),
-    GbaCell::new(0),
-    GbaCell::new(0),
-    GbaCell::new(0),
-    GbaCell::new(0),
-];
 
 #[panic_handler]
 fn panic_handler(_: &core::panic::PanicInfo) -> ! {
@@ -94,54 +72,26 @@ fn main() -> ! {
     let mut keys = StatefulKeys::new();
     let mut ball = Ball::new(SCREEN_WIDTH as u16 / 2, SCREEN_HEIGHT as u16 / 2);
 
-    let mut is_running = true;
+    let mut game_state = GameState::new();
 
     loop {
-        if let Some(edge) = keys.start().change() {
-            if let Edge::Rising = edge {
-                is_running = !is_running;
-            }
-        }
-
-        if is_running {
+        if let GameState::Run = game_state.update(&mut keys) {
             ball.update();
         }
-        SPRITE_POSITIONS[4].write(ball.x);
-        SPRITE_POSITIONS[5].write(ball.y);
 
-        draw_sprites();
+        draw_sprites(&ball);
 
         VBlankIntrWait();
     }
 }
 
-extern "C" fn draw_sprites() {
+fn draw_sprites(ball: &Ball) {
     unsafe {
         let p = VIDEO3_VRAM.as_usize() as *mut u8;
         __aeabi_memset(p, 240 * 160 * 2, 0)
     }
 
-    draw_rect(
-        SPRITE_POSITIONS[0].read(),
-        SPRITE_POSITIONS[1].read(),
-        PADDLE_WIDTH,
-        PADDLE_HEIGHT,
-        Color::WHITE,
-    );
-    draw_rect(
-        SPRITE_POSITIONS[2].read(),
-        SPRITE_POSITIONS[3].read(),
-        PADDLE_WIDTH,
-        PADDLE_HEIGHT,
-        Color::WHITE,
-    );
-    draw_rect(
-        SPRITE_POSITIONS[4].read(),
-        SPRITE_POSITIONS[5].read(),
-        BALL_SIZE,
-        BALL_SIZE,
-        Color::WHITE,
-    );
+    draw_rect(ball.x, ball.y, BALL_SIZE, BALL_SIZE, Color::WHITE);
 }
 
 fn draw_rect(x: u16, y: u16, width: u16, height: u16, color: Color) {
