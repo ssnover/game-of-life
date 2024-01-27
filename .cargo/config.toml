@@ -5,5 +5,5 @@ target = "thumbv4t-none-eabi"
 build-std = ["core"]
 
 [target.thumbv4t-none-eabi]
-rustflags = ["-Clink-arg=-Tlinker.ld"]
-runner = "mgba -2"
+rustflags = ["-Clink-arg=-Tlinker_scripts/mono_boot.ld"]
+runner = "mgba-qt -2"

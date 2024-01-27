@@ -3,22 +3,44 @@
 version = 3
 
 [[package]]
+name = "array-init"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d62b7694a562cdf5a74227903507c56ab2cc8bdd1f781ed5cb4cf9c9f810bfc"
+
+[[package]]
+name = "bitfrob"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a96c7c818dc8807bb1982dd2cba4c7de0ed6eba4ffb5fc24321d1b38676a120"
+
+[[package]]
+name = "bracer"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6559b8c3065745016f5cc2d1095273fe8a175e953c976426947ad828d6ba6fda"
+
+[[package]]
 name = "game-of-life"
 version = "0.1.0"
 dependencies = [
+ "array-init",
  "gba",
 ]
 
 [[package]]
 name = "gba"
-version = "0.5.2"
-source = "git+https://github.com/rust-console/gba#5c5081ddc4b568f936a9d633d3fa81258e9c83e1"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ab90d1de12c1323d80d9850c55d68931512ef7f0462a8c79e92b726f5037ad6"
 dependencies = [
+ "bitfrob",
+ "bracer",
  "voladdress",
 ]
 
 [[package]]
 name = "voladdress"
-version = "0.4.5"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e1c00b315fa5b67ca61aa4b7ac802c92a014813e5c4c8dc77e2aee6d30527ae"
+checksum = "7fbf3fef7bc995d3f8350936bdd07966c7a1f96183d52e3f28c29d099d0b5ecc"

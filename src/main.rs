@@ -1,8 +1,9 @@
 #![no_std]
 #![no_main]
-#![feature(isa_attribute)]
 
 use core::cmp::min;
+use core::mem::size_of;
+use gba::keys::KeyInput;
 use gba::prelude::*;
 
 #[panic_handler]
@@ -10,41 +11,42 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+const SCREEN_HEIGHT: usize = 160;
+const SCREEN_WIDTH: usize = 240;
 const PIXELS_PER_CELL: usize = 2;
-const CELLS_Y: usize = mode3::HEIGHT / PIXELS_PER_CELL;
-const CELLS_X: usize = mode3::WIDTH / PIXELS_PER_CELL;
+const CELLS_Y: usize = SCREEN_HEIGHT / PIXELS_PER_CELL;
+const CELLS_X: usize = SCREEN_WIDTH / PIXELS_PER_CELL;
+
+type Screen = [Color; CELLS_Y * CELLS_X];
 
 #[no_mangle]
 pub fn main() -> ! {
+    let mut screen = [Color::from_rgb(0, 0, 0); CELLS_Y * CELLS_X];
+
     DISPCNT.write(
         DisplayControl::new()
-            .with_display_mode(3)
-            .with_display_bg2(true),
+            .with_video_mode(VideoMode::_3)
+            .with_show_bg2(true),
     );
 
-    unsafe {
-        USER_IRQ_HANDLER.write(Some(irq_handler_a32));
-        IME.write(true);
-        IE.write(InterruptFlags::new().with_vblank(true));
-    };
-    DISPSTAT.write(DisplayStatus::new().with_vblank_irq_enabled(true));
+    RUST_IRQ_HANDLER.write(Some(irq_blank));
+    IME.write(true);
+    IE.write(IrqBits::VBLANK);
+    DISPSTAT.write(DisplayStatus::new().with_irq_vblank(true));
 
-    let mut screen_buf = Screen::new();
     let mut current_game_state = GameState::Edit;
     let mut cursor = Cursor::new();
     let mut map_context = RunStateContext::new();
 
     loop {
-        let keys = KEYINPUT.read().into();
+        let keys = KEYINPUT.read();
 
         match current_game_state {
             GameState::Edit => {
-                // process cursor movement
                 cursor.process_keys(&keys);
-                // render map
-                map_context.render_map(&mut screen_buf);
-                // render cursor
-                render_cursor(&cursor, &mut screen_buf);
+                map_context.render_map(&mut screen);
+                cursor.render();
+
                 if keys.start() {
                     current_game_state = GameState::Run;
                 }
@@ -53,78 +55,73 @@ pub fn main() -> ! {
                 }
             }
             GameState::Run => {
-                // render map
-                map_context.render_map(&mut screen_buf);
-                // step forward automata
+                map_context.render_map(&mut screen);
                 map_context.step();
+
                 if keys.start() {
                     current_game_state = GameState::Edit;
                 }
             }
         }
 
-        screen_buf.render();
-
-        unsafe { VBlankIntrWait() };
+        VBlankIntrWait();
     }
 }
 
-fn write_pixel(x: usize, y: usize, color: Color) {
-    mode3::bitmap_xy(x, y).write(color);
-}
-
-pub struct Screen([[Color; CELLS_Y]; CELLS_X]);
-
-impl Screen {
-    pub fn new() -> Self {
-        Screen([[Color::from_rgb(0, 0, 0); CELLS_Y]; CELLS_X])
-    }
-    pub fn write_cell(&mut self, x: usize, y: usize, color: Color) {
-        self.0[x][y] = color;
-    }
-
-    pub fn render(&self) {
-        for col in 0..CELLS_X {
-            for row in 0..CELLS_Y {
-                Screen::render_cell(col, row, self.0[col][row]);
-            }
-        }
-    }
-
-    fn render_cell(x: usize, y: usize, color: Color) {
-        for row in 0..PIXELS_PER_CELL {
-            for col in 0..PIXELS_PER_CELL {
-                write_pixel(
-                    (PIXELS_PER_CELL * x) + col,
-                    (PIXELS_PER_CELL * y) + row,
-                    color,
-                );
-            }
+#[inline]
+fn update_screen(screen: &mut Screen, cell_x: usize, cell_y: usize, color: Color) {
+    for pixel_y in (cell_y * 2)..((cell_y * 2) + PIXELS_PER_CELL) {
+        for pixel_x in (cell_x * 2)..((cell_x * 2) + PIXELS_PER_CELL) {
+            screen[pixel_x + pixel_y * CELLS_X] = color;
         }
     }
 }
 
+#[inline]
+fn render_cell(cell_x: usize, cell_y: usize, color: Color) {
+    for pixel_y in (cell_y * 2)..((cell_y * 2) + PIXELS_PER_CELL) {
+        for pixel_x in (cell_x * 2)..((cell_x * 2) + PIXELS_PER_CELL) {
+            VIDEO3_VRAM.index(pixel_x, pixel_y).write(color);
+        }
+    }
+}
+
+pub fn render_screen(screen: &mut Screen) {
+    for cell_y in 0..CELLS_Y {
+        for cell_x in 0..CELLS_X {
+            render_cell(cell_x, cell_y, screen[cell_x + cell_y * CELLS_X]);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 enum GameState {
     Edit,
     Run,
 }
 
-struct Cursor((usize, usize));
+struct Cursor {
+    x: u16,
+    y: u16,
+}
 
 impl Cursor {
     pub fn new() -> Self {
-        Cursor((CELLS_X / 2, CELLS_Y / 2))
+        Cursor {
+            x: SCREEN_WIDTH as u16 / 2,
+            y: SCREEN_HEIGHT as u16 / 2,
+        }
     }
 
     pub fn x(&self) -> usize {
-        self.0 .0
+        self.x as usize
     }
 
     pub fn y(&self) -> usize {
-        self.0 .1
+        self.y as usize
     }
 
-    pub fn process_keys(&mut self, input: &Keys) {
+    pub fn process_keys(&mut self, input: &KeyInput) {
         if input.up() {
             self.move_up();
         } else if input.down() {
@@ -139,35 +136,35 @@ impl Cursor {
     }
 
     fn move_right(&mut self) {
-        self.0 .0 = min(self.0 .0 + 1, CELLS_X - 1);
+        self.x = min(self.x + 1, CELLS_X as u16 - 1);
     }
 
     fn move_up(&mut self) {
-        self.0 .1 = self.0 .1.saturating_sub(1);
+        self.y = self.y.saturating_sub(1);
     }
 
     fn move_left(&mut self) {
-        self.0 .0 = self.0 .0.saturating_sub(1);
+        self.x = self.x.saturating_sub(1);
     }
 
     fn move_down(&mut self) {
-        self.0 .1 = min(self.0 .1 + 1, CELLS_Y - 1)
+        self.y = min(self.y + 1, CELLS_Y as u16 - 1);
     }
-}
 
-fn render_cursor(cursor: &Cursor, screen_buf: &mut Screen) {
-    const WHITE: Color = Color::from_rgb(255, 255, 255);
-    if cursor.0 .0 != 0 {
-        screen_buf.write_cell(cursor.0 .0 - 1, cursor.0 .1, WHITE);
-    }
-    if cursor.0 .1 != 0 {
-        screen_buf.write_cell(cursor.0 .0, cursor.0 .1 - 1, WHITE);
-    }
-    if cursor.0 .0 != CELLS_X - 1 {
-        screen_buf.write_cell(cursor.0 .0 + 1, cursor.0 .1, WHITE);
-    }
-    if cursor.0 .1 != CELLS_Y - 1 {
-        screen_buf.write_cell(cursor.0 .0, cursor.0 .1 + 1, WHITE);
+    fn render(&self) {
+        const WHITE: Color = Color::from_rgb(255, 255, 255);
+        if self.x != 0 {
+            render_cell(self.x as usize - 1, self.y as usize, WHITE);
+        }
+        if self.y != 0 {
+            render_cell(self.x as usize, self.y as usize - 1, WHITE);
+        }
+        if self.x as usize != CELLS_X - 1 {
+            render_cell(self.x as usize + 1, self.y as usize, WHITE);
+        }
+        if self.y as usize != CELLS_Y - 1 {
+            render_cell(self.x as usize, self.y as usize + 1, WHITE);
+        }
     }
 }
 
@@ -195,11 +192,11 @@ impl RunStateContext {
         self.primary_map_is_a = !self.primary_map_is_a;
     }
 
-    pub fn render_map(&self, screen_buf: &mut Screen) {
+    pub fn render_map(&self, screen: &mut Screen) {
         if self.primary_map_is_a {
-            render(&self.map_state_a, screen_buf);
+            render_game_state(&self.map_state_a, screen);
         } else {
-            render(&self.map_state_b, screen_buf);
+            render_game_state(&self.map_state_b, screen);
         }
     }
 
@@ -259,30 +256,21 @@ impl MapState {
     }
 }
 
-fn render(game_state: &MapState, screen_buf: &mut Screen) {
+fn render_game_state(game_state: &MapState, screen: &mut Screen) {
     for col in 0..CELLS_X {
         for row in 0..CELLS_Y {
             if game_state.0[col][row] {
-                screen_buf.write_cell(col, row, Color::from_rgb(0, 31, 0));
+                update_screen(screen, col, row, Color::from_rgb(0, 255, 0));
             } else {
-                screen_buf.write_cell(col, row, Color::from_rgb(0, 0, 0));
+                update_screen(screen, col, row, Color::from_rgb(0, 0, 0));
             }
         }
     }
 }
 
-#[instruction_set(arm::a32)]
-extern "C" fn irq_handler_a32() {
-    irq_handler_t32();
-}
-
-fn irq_handler_t32() {
-    unsafe { IME.write(false) };
-
-    let mut intr_wait_flags = INTR_WAIT_ACKNOWLEDGE.read();
-    intr_wait_flags.set_vblank(true);
-    IRQ_ACKNOWLEDGE.write(intr_wait_flags);
-    unsafe { INTR_WAIT_ACKNOWLEDGE.write(intr_wait_flags) };
-
-    unsafe { IME.write(true) };
+extern "C" fn irq_blank(_bits: IrqBits) {
+    unsafe {
+        let p = VIDEO3_VRAM.as_usize() as *mut u8;
+        gba::mem_fns::__aeabi_memset(p, SCREEN_WIDTH * SCREEN_HEIGHT * size_of::<u16>(), 0)
+    }
 }
