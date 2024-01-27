@@ -3,6 +3,7 @@ use gba::prelude::*;
 pub struct StatefulKeys {
     keys: DebouncedKeys,
     last_start_state: bool,
+    last_a_state: bool,
 }
 
 impl StatefulKeys {
@@ -10,6 +11,7 @@ impl StatefulKeys {
         Self {
             keys: DebouncedKeys::new(),
             last_start_state: false,
+            last_a_state: false,
         }
     }
 
@@ -20,6 +22,16 @@ impl StatefulKeys {
             current_state: self.keys.start(),
         };
         self.last_start_state = self.keys.start();
+        state
+    }
+
+    pub fn a(&mut self) -> KeyState {
+        self.keys.update();
+        let state = KeyState {
+            last_state: self.last_a_state,
+            current_state: self.keys.a(),
+        };
+        self.last_a_state = self.keys.a();
         state
     }
 }
@@ -50,8 +62,33 @@ struct DebouncedKeyState {
     debounced_state: bool,
 }
 
+impl DebouncedKeyState {
+    pub fn new(initial_state: bool, time: u16) -> Self {
+        Self {
+            last_state: initial_state,
+            last_debounce_time: time,
+            debounced_state: initial_state,
+        }
+    }
+
+    pub fn update(&mut self, new_state: bool, time: u16) {
+        if self.last_state != new_state {
+            self.last_debounce_time = time;
+        }
+
+        if time.wrapping_sub(self.last_debounce_time) > DebouncedKeys::DEBOUNCE_DELAY {
+            if new_state != self.debounced_state {
+                self.debounced_state = new_state;
+            }
+        }
+
+        self.last_state = new_state;
+    }
+}
+
 struct DebouncedKeys {
     start: DebouncedKeyState,
+    a: DebouncedKeyState,
 }
 
 impl DebouncedKeys {
@@ -61,11 +98,8 @@ impl DebouncedKeys {
         let now = TIMER0_COUNT.read();
         let keys = KEYINPUT.read();
         Self {
-            start: DebouncedKeyState {
-                last_state: keys.start(),
-                last_debounce_time: now,
-                debounced_state: keys.start(),
-            },
+            start: DebouncedKeyState::new(keys.start(), now),
+            a: DebouncedKeyState::new(keys.a(), now),
         }
     }
 
@@ -73,20 +107,15 @@ impl DebouncedKeys {
         let now = TIMER0_COUNT.read();
         let keys = KEYINPUT.read();
 
-        if self.start.last_state != keys.start() {
-            self.start.last_debounce_time = now;
-        }
-
-        if now.wrapping_sub(self.start.last_debounce_time) > Self::DEBOUNCE_DELAY {
-            if keys.start() != self.start.debounced_state {
-                self.start.debounced_state = keys.start();
-            }
-        }
-
-        self.start.last_state = keys.start();
+        self.start.update(keys.start(), now);
+        self.a.update(keys.a(), now);
     }
 
     pub fn start(&self) -> bool {
         self.start.debounced_state
+    }
+
+    pub fn a(&self) -> bool {
+        self.a.debounced_state
     }
 }
