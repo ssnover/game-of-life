@@ -3,6 +3,9 @@
 
 use gba::{mem_fns::__aeabi_memset, prelude::*};
 
+mod keys;
+use keys::{Edge, StatefulKeys};
+
 const SCREEN_WIDTH: u16 = 240;
 const SCREEN_HEIGHT: u16 = 160;
 
@@ -107,10 +110,18 @@ fn main() -> ! {
             .with_show_bg2(true),
     );
 
-    RUST_IRQ_HANDLER.write(Some(draw_sprites));
     DISPSTAT.write(DisplayStatus::new().with_irq_vblank(true));
     IE.write(IrqBits::VBLANK);
     IME.write(true);
+
+    // CPU frequency is 16.78 MHz, so a tick with a prescale of 64 is a little less than 2.5 ms
+    TIMER0_CONTROL.write(
+        TimerControl::new()
+            .with_scale(TimerScale::_64)
+            .with_enabled(true),
+    );
+
+    let mut keys = StatefulKeys::new();
 
     let mut left_paddle = Paddle::new(10, SCREEN_HEIGHT as u16 / 2 - PADDLE_HEIGHT / 2);
     let mut right_paddle = Paddle::new(
@@ -119,10 +130,20 @@ fn main() -> ! {
     );
     let mut ball = Ball::new(SCREEN_WIDTH as u16 / 2, SCREEN_HEIGHT as u16 / 2);
 
+    let mut is_running = true;
+
     loop {
-        left_paddle.update();
-        right_paddle.update();
-        ball.update(&left_paddle, &right_paddle);
+        if let Some(edge) = keys.start().change() {
+            if let Edge::Rising = edge {
+                is_running = !is_running;
+            }
+        }
+
+        if is_running {
+            left_paddle.update();
+            right_paddle.update();
+            ball.update(&left_paddle, &right_paddle);
+        }
 
         SPRITE_POSITIONS[0].write(left_paddle.x);
         SPRITE_POSITIONS[1].write(left_paddle.y);
@@ -131,11 +152,13 @@ fn main() -> ! {
         SPRITE_POSITIONS[4].write(ball.x);
         SPRITE_POSITIONS[5].write(ball.y);
 
+        draw_sprites();
+
         VBlankIntrWait();
     }
 }
 
-extern "C" fn draw_sprites(_bits: IrqBits) {
+extern "C" fn draw_sprites() {
     unsafe {
         let p = VIDEO3_VRAM.as_usize() as *mut u8;
         __aeabi_memset(p, 240 * 160 * 2, 0)
