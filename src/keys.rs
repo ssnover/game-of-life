@@ -34,6 +34,22 @@ impl StatefulKeys {
         self.last_a_state = self.keys.a();
         state
     }
+
+    pub fn left(&self) -> bool {
+        self.keys.left()
+    }
+
+    pub fn right(&self) -> bool {
+        self.keys.right()
+    }
+
+    pub fn up(&self) -> bool {
+        self.keys.up()
+    }
+
+    pub fn down(&self) -> bool {
+        self.keys.down()
+    }
 }
 
 pub enum Edge {
@@ -117,5 +133,21 @@ impl DebouncedKeys {
 
     pub fn a(&self) -> bool {
         self.a.debounced_state
+    }
+
+    pub fn left(&self) -> bool {
+        KEYINPUT.read().left()
+    }
+
+    pub fn right(&self) -> bool {
+        KEYINPUT.read().right()
+    }
+
+    pub fn up(&self) -> bool {
+        KEYINPUT.read().up()
+    }
+
+    pub fn down(&self) -> bool {
+        KEYINPUT.read().down()
     }
 }

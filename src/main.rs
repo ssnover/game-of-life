@@ -1,49 +1,22 @@
 #![no_std]
 #![no_main]
 
+use conway::ConwaysState;
 use gba::{mem_fns::__aeabi_memset, prelude::*};
 
+mod conway;
+mod cursor;
+use cursor::Cursor;
 mod keys;
 use keys::StatefulKeys;
 mod game_state;
 use game_state::GameState;
 
-const SCREEN_WIDTH: u16 = 240;
-const SCREEN_HEIGHT: u16 = 160;
-
-const BALL_SIZE: u16 = 2;
-
-struct Ball {
-    x: u16,
-    y: u16,
-    dx: i16,
-    dy: i16,
-}
-
-impl Ball {
-    fn new(x: u16, y: u16) -> Self {
-        Self { x, y, dx: 1, dy: 1 }
-    }
-
-    fn update(&mut self) {
-        if self.y <= 0 || self.y + BALL_SIZE >= SCREEN_HEIGHT {
-            self.dy = -self.dy;
-        }
-
-        if self.x + BALL_SIZE >= 1 && self.x <= 1 {
-            self.dx = -self.dx;
-            self.dy = -self.dy;
-        }
-
-        if self.x + BALL_SIZE >= SCREEN_WIDTH && self.x <= SCREEN_WIDTH {
-            self.dx = -self.dx;
-            self.dy = -self.dy;
-        }
-
-        self.x = (self.x as i16 + self.dx) as u16;
-        self.y = (self.y as i16 + self.dy) as u16;
-    }
-}
+const SCREEN_WIDTH: usize = 240;
+const SCREEN_HEIGHT: usize = 160;
+const CELL_SIZE: usize = 2;
+const BOARD_WIDTH: usize = SCREEN_WIDTH / CELL_SIZE;
+const BOARD_HEIGHT: usize = SCREEN_HEIGHT / CELL_SIZE;
 
 #[panic_handler]
 fn panic_handler(_: &core::panic::PanicInfo) -> ! {
@@ -70,35 +43,70 @@ fn main() -> ! {
     );
 
     let mut keys = StatefulKeys::new();
-    let mut ball = Ball::new(SCREEN_WIDTH as u16 / 2, SCREEN_HEIGHT as u16 / 2);
-
+    let mut cursor = Cursor::new();
     let mut game_state = GameState::new();
+    let mut conways_state = ConwaysState::<BOARD_WIDTH, BOARD_HEIGHT>::new();
 
     loop {
         if let GameState::Run = game_state.update(&mut keys) {
-            ball.update();
+            conways_state.step();
+        } else {
+            cursor.update(&mut keys, &mut conways_state);
         }
 
-        draw_sprites(&ball);
+        draw_sprites(game_state, &cursor, &conways_state);
 
         VBlankIntrWait();
     }
 }
 
-fn draw_sprites(ball: &Ball) {
+fn draw_sprites(
+    game_state: GameState,
+    cursor: &Cursor,
+    board: &ConwaysState<BOARD_WIDTH, BOARD_HEIGHT>,
+) {
     unsafe {
         let p = VIDEO3_VRAM.as_usize() as *mut u8;
         __aeabi_memset(p, 240 * 160 * 2, 0)
     }
 
-    draw_rect(ball.x, ball.y, BALL_SIZE, BALL_SIZE, Color::WHITE);
+    if let GameState::Edit = game_state {
+        if cursor.x > 0 {
+            // Draw the left side
+            draw_cell(cursor.x - 1, cursor.y, Color::WHITE)
+        }
+        if cursor.x < BOARD_WIDTH as u16 - 1 {
+            // Draw the right side
+            draw_cell(cursor.x + 1, cursor.y, Color::WHITE)
+        }
+        if cursor.y > 0 {
+            // Draw the top side
+            draw_cell(cursor.x, cursor.y - 1, Color::WHITE)
+        }
+        if cursor.y < BOARD_HEIGHT as u16 - 1 {
+            // Draw the bottom side
+            draw_cell(cursor.x, cursor.y + 1, Color::WHITE)
+        }
+    }
+
+    for row in 0..BOARD_HEIGHT {
+        for col in 0..BOARD_WIDTH {
+            if board.states[row][col] {
+                draw_cell(col as u16, row as u16, Color::GREEN);
+            }
+        }
+    }
 }
 
-fn draw_rect(x: u16, y: u16, width: u16, height: u16, color: Color) {
-    for i in 0..width {
-        for j in 0..height {
+#[inline]
+fn draw_cell(x: u16, y: u16, color: Color) {
+    for i in 0..CELL_SIZE as u16 {
+        for j in 0..CELL_SIZE as u16 {
             VIDEO3_VRAM
-                .index((x + i) as usize, (y + j) as usize)
+                .index(
+                    ((x * CELL_SIZE as u16) + i) as usize,
+                    ((y * CELL_SIZE as u16) + j) as usize,
+                )
                 .write(color);
         }
     }
