@@ -12,6 +12,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+debug = true
 
 [package.metadata.docs.rs]
 default-target = "thumbv4t-none-eabi"

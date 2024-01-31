@@ -108,7 +108,7 @@ struct DebouncedKeys {
 }
 
 impl DebouncedKeys {
-    const DEBOUNCE_DELAY: u16 = 10;
+    const DEBOUNCE_DELAY: u16 = 120;
 
     pub fn new() -> Self {
         let now = TIMER0_COUNT.read();

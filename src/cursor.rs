@@ -1,7 +1,7 @@
 use crate::{
     conway::ConwaysState,
     keys::{Edge, StatefulKeys},
-    BOARD_HEIGHT, BOARD_WIDTH,
+    BOARD_HEIGHT, BOARD_WIDTH, BOARD_WIDTH_BYTES,
 };
 
 const MAX_COUNTER: u8 = 4;
@@ -24,7 +24,7 @@ impl Cursor {
     pub fn update(
         &mut self,
         keys: &mut StatefulKeys,
-        board: &mut ConwaysState<BOARD_WIDTH, BOARD_HEIGHT>,
+        board: &mut ConwaysState<BOARD_WIDTH_BYTES, BOARD_HEIGHT>,
     ) {
         self.counter += 1;
         if self.counter == MAX_COUNTER {
@@ -46,7 +46,7 @@ impl Cursor {
 
         if let Some(edge) = keys.a().change() {
             if let Edge::Rising = edge {
-                board.toggle_cell(self.x, self.y);
+                board.toggle_cell(self.x as usize, self.y as usize);
             }
         }
     }
