@@ -1,3 +1,6 @@
+use rand_xoshiro::rand_core::{RngCore, SeedableRng};
+use rand_xoshiro::Xoshiro128StarStar;
+
 type BoardState<const X: usize, const Y: usize> = [[u8; X]; Y];
 
 pub struct ConwaysState<const WIDTH: usize, const HEIGHT: usize> {
@@ -72,5 +75,21 @@ impl<const WIDTH: usize, const HEIGHT: usize> ConwaysState<WIDTH, HEIGHT> {
         }
 
         count
+    }
+
+    pub fn randomize(&mut self, seed: u32) {
+        let mut rng = Xoshiro128StarStar::seed_from_u64(seed as u64);
+        let mut rand_val = rng.next_u32();
+        let mut rand_counter = 0;
+
+        for col in 0..(WIDTH * 8) {
+            for row in 0..HEIGHT {
+                self.set_cell(col, row, ((rand_val >> (rand_counter * 2)) & 0b11) == 0);
+                rand_counter = (rand_counter + 1) % 16;
+                if rand_counter == 0 {
+                    rand_val = rng.next_u32();
+                }
+            }
+        }
     }
 }

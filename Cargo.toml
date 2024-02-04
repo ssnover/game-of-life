@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-array-init = "2.1"
 gba = "0.11.3"
+rand_xoshiro = "0.6"
 
 [profile.dev]
 panic = "abort"

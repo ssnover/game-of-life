@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use crate::keys::Edge;
 use conway::ConwaysState;
 use gba::prelude::*;
 
@@ -73,6 +74,10 @@ fn main() -> ! {
             }
         } else {
             cursor.update(&mut keys, current_state, &mut dirty_row_buffer);
+            if let Some(Edge::Falling) = keys.select().change() {
+                current_state.randomize(TIMER0_COUNT.read() as u32);
+                dirty_row_buffer.iter_mut().for_each(|elem| *elem = 0xff);
+            }
         }
 
         draw_sprites(game_state, &cursor, current_state, &dirty_row_buffer);

@@ -3,6 +3,7 @@ use gba::prelude::*;
 pub struct StatefulKeys {
     keys: DebouncedKeys,
     last_start_state: bool,
+    last_select_state: bool,
     last_a_state: bool,
 }
 
@@ -11,6 +12,7 @@ impl StatefulKeys {
         Self {
             keys: DebouncedKeys::new(),
             last_start_state: false,
+            last_select_state: false,
             last_a_state: false,
         }
     }
@@ -22,6 +24,16 @@ impl StatefulKeys {
             current_state: self.keys.start(),
         };
         self.last_start_state = self.keys.start();
+        state
+    }
+
+    pub fn select(&mut self) -> KeyState {
+        self.keys.update();
+        let state = KeyState {
+            last_state: self.last_select_state,
+            current_state: self.keys.select(),
+        };
+        self.last_select_state = self.keys.select();
         state
     }
 
@@ -109,7 +121,7 @@ struct DebouncedKeys {
 }
 
 impl DebouncedKeys {
-    const DEBOUNCE_DELAY: u16 = 80;
+    const DEBOUNCE_DELAY: u16 = 40;
 
     pub fn new() -> Self {
         let now = TIMER0_COUNT.read();
