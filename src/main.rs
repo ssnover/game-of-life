@@ -96,32 +96,41 @@ fn draw_sprites(
     board: &ConwaysState<BOARD_WIDTH_BYTES, BOARD_HEIGHT>,
     dirty_row_buffer: &[u8],
 ) {
+    let cursor_color = if let GameState::Edit = game_state {
+        Color::WHITE
+    } else {
+        Color::BLACK
+    };
+    if cursor.x > 0 {
+        // Draw the left side
+        draw_cell(cursor.x - 1, cursor.y, cursor_color)
+    }
+    if cursor.x < BOARD_WIDTH as u16 - 1 {
+        // Draw the right side
+        draw_cell(cursor.x + 1, cursor.y, cursor_color)
+    }
+    if cursor.y > 0 {
+        // Draw the top side
+        draw_cell(cursor.x, cursor.y - 1, cursor_color)
+    }
+    if cursor.y < BOARD_HEIGHT as u16 - 1 {
+        // Draw the bottom side
+        draw_cell(cursor.x, cursor.y + 1, cursor_color)
+    }
+
     for row in 0..BOARD_HEIGHT {
         if dirty_row_buffer[row / 8] & (1 << (row % 8)) != 0 {
             for col in 0..BOARD_WIDTH {
-                if board.get_cell(col, row) {
-                    draw_cell(col as u16, row as u16, Color::GREEN);
-                }
+                draw_cell(
+                    col as u16,
+                    row as u16,
+                    if board.get_cell(col, row) {
+                        Color::GREEN
+                    } else {
+                        Color::BLACK
+                    },
+                );
             }
-        }
-    }
-
-    if let GameState::Edit = game_state {
-        if cursor.x > 0 {
-            // Draw the left side
-            draw_cell(cursor.x - 1, cursor.y, Color::WHITE)
-        }
-        if cursor.x < BOARD_WIDTH as u16 - 1 {
-            // Draw the right side
-            draw_cell(cursor.x + 1, cursor.y, Color::WHITE)
-        }
-        if cursor.y > 0 {
-            // Draw the top side
-            draw_cell(cursor.x, cursor.y - 1, Color::WHITE)
-        }
-        if cursor.y < BOARD_HEIGHT as u16 - 1 {
-            // Draw the bottom side
-            draw_cell(cursor.x, cursor.y + 1, Color::WHITE)
         }
     }
 }
