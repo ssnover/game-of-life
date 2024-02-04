@@ -104,17 +104,19 @@ impl DebouncedKeyState {
 
 struct DebouncedKeys {
     start: DebouncedKeyState,
+    select: DebouncedKeyState,
     a: DebouncedKeyState,
 }
 
 impl DebouncedKeys {
-    const DEBOUNCE_DELAY: u16 = 120;
+    const DEBOUNCE_DELAY: u16 = 80;
 
     pub fn new() -> Self {
         let now = TIMER0_COUNT.read();
         let keys = KEYINPUT.read();
         Self {
             start: DebouncedKeyState::new(keys.start(), now),
+            select: DebouncedKeyState::new(keys.select(), now),
             a: DebouncedKeyState::new(keys.a(), now),
         }
     }
@@ -125,10 +127,15 @@ impl DebouncedKeys {
 
         self.start.update(keys.start(), now);
         self.a.update(keys.a(), now);
+        self.select.update(keys.select(), now);
     }
 
     pub fn start(&self) -> bool {
         self.start.debounced_state
+    }
+
+    pub fn select(&self) -> bool {
+        self.select.debounced_state
     }
 
     pub fn a(&self) -> bool {
