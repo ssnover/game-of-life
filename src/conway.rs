@@ -30,7 +30,7 @@ impl<const WIDTH: usize, const HEIGHT: usize> ConwaysState<WIDTH, HEIGHT> {
         self.set_cell(col, row, !self.get_cell(col, row));
     }
 
-    pub fn step(&mut self, old: &ConwaysState<WIDTH, HEIGHT>) {
+    pub fn step(&mut self, old: &ConwaysState<WIDTH, HEIGHT>, dirty_row_buffer: &mut [u8]) {
         for col in 0..(WIDTH * 8) {
             for row in 0..HEIGHT {
                 match (old.get_cell(col, row), old.neighbors_alive(col, row)) {
@@ -39,9 +39,11 @@ impl<const WIDTH: usize, const HEIGHT: usize> ConwaysState<WIDTH, HEIGHT> {
                     }
                     (false, 3) => {
                         self.set_cell(col, row, true);
+                        dirty_row_buffer[row / 8] |= 1 << (row % 8);
                     }
                     (true, _) => {
                         self.set_cell(col, row, false);
+                        dirty_row_buffer[row / 8] |= 1 << (row % 8);
                     }
                     (false, _) => {
                         self.set_cell(col, row, false);

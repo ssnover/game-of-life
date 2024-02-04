@@ -2,7 +2,7 @@
 #![no_main]
 
 use conway::ConwaysState;
-use gba::{mem_fns::__aeabi_memset, prelude::*};
+use gba::prelude::*;
 
 mod conway;
 mod cursor;
@@ -54,6 +54,8 @@ fn main() -> ! {
     conways_state_b.set_cell(1, 1, true);
     conways_state_b.set_cell(2, 1, true);
 
+    let mut dirty_row_buffer = [0u8; BOARD_HEIGHT / 8];
+
     let mut counter = 0;
     const STEP_PERIOD: u32 = 10;
 
@@ -67,13 +69,14 @@ fn main() -> ! {
         game_state.update(&mut keys);
         if let GameState::Run = game_state {
             if counter == 0 {
-                current_state.step(&last_state);
+                current_state.step(&last_state, &mut dirty_row_buffer);
             }
         } else {
-            cursor.update(&mut keys, current_state);
+            cursor.update(&mut keys, current_state, &mut dirty_row_buffer);
         }
 
-        draw_sprites(game_state, &cursor, current_state);
+        draw_sprites(game_state, &cursor, current_state, &dirty_row_buffer);
+        dirty_row_buffer.iter_mut().for_each(|elem| *elem = 0x00);
 
         VBlankIntrWait();
 
@@ -91,15 +94,14 @@ fn draw_sprites(
     game_state: GameState,
     cursor: &Cursor,
     board: &ConwaysState<BOARD_WIDTH_BYTES, BOARD_HEIGHT>,
+    dirty_row_buffer: &[u8],
 ) {
-    unsafe {
-        let p = VIDEO3_VRAM.as_usize() as *mut u8;
-        __aeabi_memset(p, 240 * 160 * 2, 0);
-    }
     for row in 0..BOARD_HEIGHT {
-        for col in 0..BOARD_WIDTH {
-            if board.get_cell(col, row) {
-                draw_cell(col as u16, row as u16, Color::GREEN);
+        if dirty_row_buffer[row / 8] & (1 << (row % 8)) != 0 {
+            for col in 0..BOARD_WIDTH {
+                if board.get_cell(col, row) {
+                    draw_cell(col as u16, row as u16, Color::GREEN);
+                }
             }
         }
     }
